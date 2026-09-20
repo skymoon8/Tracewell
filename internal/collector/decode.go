@@ -9,6 +9,7 @@ import (
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 
+	"github.com/skymoon8/tracewell/internal/attrs"
 	"github.com/skymoon8/tracewell/internal/trace"
 )
 
@@ -20,6 +21,10 @@ const spanKindAttr = "openinference.span.kind"
 // Tracewell's internal model. Malformed attribute values are skipped
 // rather than rejected: observability data must never be dropped
 // wholesale because one field is unexpected.
+//
+// Attributes are ingested through the standard pipeline: JSON-string
+// conventions are parsed, then flat dotted keys are expanded into
+// nested maps and arrays.
 func DecodeSpans(req *collectorpb.ExportTraceServiceRequest) []trace.Span {
 	var out []trace.Span
 	for _, rs := range req.GetResourceSpans() {
@@ -33,7 +38,14 @@ func DecodeSpans(req *collectorpb.ExportTraceServiceRequest) []trace.Span {
 }
 
 func decodeSpan(s *tracepb.Span) trace.Span {
-	attrs := decodeAttributes(s.GetAttributes())
+	flat := decodeAttributes(s.GetAttributes())
+	pairs := make([]attrs.KV, 0, len(flat))
+	for k, v := range flat {
+		pairs = append(pairs, attrs.KV{Key: k, Value: v})
+	}
+	// Span kind is classified from the flat attribute map before
+	// expansion: the flat view is the authoritative protocol shape.
+	nested := attrs.Unflatten(attrs.LoadJSONStrings(pairs))
 	span := trace.Span{
 		Name:     s.GetName(),
 		TraceID:  hex.EncodeToString(s.GetTraceId()),
@@ -43,8 +55,8 @@ func decodeSpan(s *tracepb.Span) trace.Span {
 		// time.Unix(0, n) keeps full precision with no float rounding.
 		StartTime:     unixNano(s.GetStartTimeUnixNano()),
 		EndTime:       unixNano(s.GetEndTimeUnixNano()),
-		Attributes:    attrs,
-		SpanKind:      trace.SpanKindFromAttribute(attrs[spanKindAttr]),
+		Attributes:    nested,
+		SpanKind:      trace.SpanKindFromAttribute(flat[spanKindAttr]),
 		StatusCode:    decodeStatus(s.GetStatus().GetCode()),
 		StatusMessage: s.GetStatus().GetMessage(),
 	}
