@@ -1,0 +1,42 @@
+# Binaries
+/bin/
+*.exe
+*.test
+*.out
+
+# Build artifacts
+/dist/
+coverage.txt
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependencies (vendored code should be committed; ignore if vendor/ is used with `go mod vendor` decision changes)
+# vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local env & secrets
+.env
+.env.local
+*.pem
+
+# Data (local dev databases etc.)
+/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# Test / coverage
+/tmp/
