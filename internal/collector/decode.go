@@ -10,6 +10,7 @@ import (
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 
 	"github.com/skymoon8/tracewell/internal/attrs"
+	"github.com/skymoon8/tracewell/internal/semconv"
 	"github.com/skymoon8/tracewell/internal/trace"
 )
 
@@ -46,6 +47,7 @@ func decodeSpan(s *tracepb.Span) trace.Span {
 	// Span kind is classified from the flat attribute map before
 	// expansion: the flat view is the authoritative protocol shape.
 	nested := attrs.Unflatten(attrs.LoadJSONStrings(pairs))
+	ex := semconv.Merge(nested, flat)
 	span := trace.Span{
 		Name:     s.GetName(),
 		TraceID:  hex.EncodeToString(s.GetTraceId()),
@@ -60,6 +62,7 @@ func decodeSpan(s *tracepb.Span) trace.Span {
 		StatusCode:    decodeStatus(s.GetStatus().GetCode()),
 		StatusMessage: s.GetStatus().GetMessage(),
 	}
+	applyExtracted(&span, ex)
 	for _, e := range s.GetEvents() {
 		span.Events = append(span.Events, trace.Event{
 			Name:       e.GetName(),
@@ -68,6 +71,30 @@ func decodeSpan(s *tracepb.Span) trace.Span {
 		})
 	}
 	return span
+}
+
+// applyExtracted copies semconv extraction results onto a span,
+// converting to the trace-package's own value types.
+func applyExtracted(span *trace.Span, ex semconv.Extracted) {
+	if ex.Input != nil {
+		span.Input = &trace.IOValue{Value: ex.Input.Value, MimeType: string(ex.Input.MimeType)}
+	}
+	if ex.Output != nil {
+		span.Output = &trace.IOValue{Value: ex.Output.Value, MimeType: string(ex.Output.MimeType)}
+	}
+	if ex.TokenUsage != nil {
+		span.TokenUsage = &trace.TokenUsage{
+			Prompt:     ex.TokenUsage.Prompt,
+			Completion: ex.TokenUsage.Completion,
+			Total:      ex.TokenUsage.Total,
+			CacheRead:  ex.TokenUsage.CacheRead,
+			CacheWrite: ex.TokenUsage.CacheWrite,
+		}
+	}
+	span.ModelName = ex.ModelName
+	span.SessionID = ex.SessionID
+	span.UserID = ex.UserID
+	span.InvocationParams = ex.InvocationParams
 }
 
 // unixNano converts OTLP's uint64 nanosecond timestamp to a time.Time.
