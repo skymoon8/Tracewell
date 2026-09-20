@@ -54,6 +54,31 @@ type Span struct {
 	StatusCode    StatusCode
 	StatusMessage string
 	Events        []Event
+
+	// Domain fields extracted from Attributes via the semconv layer.
+	// They are optional views over the same data, safe to leave nil.
+	Input            *IOValue
+	Output           *IOValue
+	TokenUsage       *TokenUsage
+	ModelName        string
+	SessionID        string
+	UserID           string
+	InvocationParams string
+}
+
+// IOValue is a structured input or output captured on a span.
+type IOValue struct {
+	Value    string
+	MimeType string
+}
+
+// TokenUsage is the token accounting of an LLM call.
+type TokenUsage struct {
+	Prompt     int
+	Completion int
+	Total      int
+	CacheRead  int
+	CacheWrite int
 }
 
 // SpanKindFromAttribute maps a raw "openinference.span.kind" attribute
