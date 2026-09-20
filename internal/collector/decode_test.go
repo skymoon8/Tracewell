@@ -106,21 +106,31 @@ func TestDecodeSpans(t *testing.T) {
 		t.Errorf("end time = %v, want %v", s.EndTime, want)
 	}
 
-	// Attribute value types survive decoding.
-	if v := s.Attributes["input.value"]; v != "What is the capital of France?" {
-		t.Errorf("input.value = %v", v)
+	// Attributes materialize as a nested structure: dotted keys expand
+	// into maps, and convention values survive with their types.
+	llm, ok := s.Attributes["llm"].(map[string]any)
+	if !ok {
+		t.Fatalf("llm attributes = %#v", s.Attributes["llm"])
 	}
-	if v := s.Attributes["llm.token_count.prompt"]; v != int64(9) {
-		t.Errorf("token count prompt = %v (%T)", v, v)
+	tc, ok := llm["token_count"].(map[string]any)
+	if !ok {
+		t.Fatalf("llm.token_count = %#v", llm["token_count"])
 	}
-	if v := s.Attributes["llm.token_count.completion"]; v != float64(7) {
-		t.Errorf("token count completion = %v (%T)", v, v)
+	if tc["prompt"] != int64(9) {
+		t.Errorf("token count prompt = %v (%T)", tc["prompt"], tc["prompt"])
 	}
-	if v, ok := s.Attributes["retrieval.documents"].([]any); !ok || len(v) != 2 {
-		t.Errorf("retrieval.documents = %v", s.Attributes["retrieval.documents"])
+	if tc["completion"] != float64(7) {
+		t.Errorf("token count completion = %v (%T)", tc["completion"], tc["completion"])
 	}
-	if v, ok := s.Attributes["metadata"].(map[string]any); !ok || v["env"] != "dev" {
-		t.Errorf("metadata = %v", s.Attributes["metadata"])
+	in, ok := s.Attributes["input"].(map[string]any)
+	if !ok || in["value"] != "What is the capital of France?" {
+		t.Errorf("input = %#v", s.Attributes["input"])
+	}
+	if docs, ok := s.Attributes["retrieval"].(map[string]any)["documents"].([]any); !ok || len(docs) != 2 {
+		t.Errorf("retrieval.documents = %#v", s.Attributes["retrieval"])
+	}
+	if meta, ok := s.Attributes["metadata"].(map[string]any); !ok || meta["env"] != "dev" {
+		t.Errorf("metadata = %#v", s.Attributes["metadata"])
 	}
 
 	// Events decode with their attributes.
