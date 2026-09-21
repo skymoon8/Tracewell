@@ -10,8 +10,6 @@ import (
 
 	tracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/protobuf/proto"
-
-	"github.com/skymoon8/tracewell/internal/trace"
 )
 
 // contentTypeProtoBuf is the only content type accepted for OTLP
@@ -32,7 +30,7 @@ const maxBodyBytes = 32 << 20
 // content type as the request. Decoding happens synchronously so that
 // clients learn about protocol errors immediately; downstream storage
 // is asynchronous by design.
-func Handler(decode func([]trace.Span)) http.Handler {
+func Handler(decode func([]SpanWithProject)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
@@ -58,8 +56,10 @@ func Handler(decode func([]trace.Span)) http.Handler {
 
 		spans := DecodeSpans(req)
 		slog.Info("ingested spans", "count", len(spans), "remote", r.RemoteAddr)
-		for _, s := range spans {
+		for _, p := range spans {
+			s := p.Span
 			slog.Info("span",
+				"project", p.Project,
 				"trace_id", s.TraceID,
 				"span_id", s.SpanID,
 				"parent_id", s.ParentID,

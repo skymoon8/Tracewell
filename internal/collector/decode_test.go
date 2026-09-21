@@ -78,7 +78,14 @@ func TestDecodeSpans(t *testing.T) {
 	if len(spans) != 1 {
 		t.Fatalf("span count = %d, want 1", len(spans))
 	}
-	s := spans[0]
+	p := spans[0]
+	s := p.Span
+
+	// The request's resource carries no project attribute, so spans
+	// land in the default project.
+	if p.Project != "default" {
+		t.Errorf("project = %q, want default", p.Project)
+	}
 
 	if s.Name != "chat completion" {
 		t.Errorf("name = %q", s.Name)
@@ -175,9 +182,9 @@ func TestHandler(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var got []trace.Span
+		var got []collector.SpanWithProject
 		rr := httptest.NewRecorder()
-		collector.Handler(func(s []trace.Span) { got = s }).ServeHTTP(rr, newReq(t, body))
+		collector.Handler(func(s []collector.SpanWithProject) { got = s }).ServeHTTP(rr, newReq(t, body))
 
 		if rr.Code != http.StatusOK {
 			t.Fatalf("code = %d, body %q", rr.Code, rr.Body.String())
@@ -202,11 +209,11 @@ func TestHandler(t *testing.T) {
 		}
 		gz.Close()
 
-		var got []trace.Span
+		var got []collector.SpanWithProject
 		rr := httptest.NewRecorder()
 		req := newReq(t, buf.Bytes())
 		req.Header.Set("Content-Encoding", "gzip")
-		collector.Handler(func(s []trace.Span) { got = s }).ServeHTTP(rr, req)
+		collector.Handler(func(s []collector.SpanWithProject) { got = s }).ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusOK || len(got) != 1 {
 			t.Fatalf("code = %d, spans = %d, body %q", rr.Code, len(got), rr.Body.String())

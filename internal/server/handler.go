@@ -5,7 +5,6 @@ import (
 
 	"github.com/skymoon8/tracewell/internal/collector"
 	"github.com/skymoon8/tracewell/internal/server/health"
-	"github.com/skymoon8/tracewell/internal/trace"
 )
 
 // NewHandler builds the top-level HTTP mux.
@@ -13,13 +12,9 @@ import (
 //
 //	GET   /healthz      liveness probe
 //	POST  /v1/traces    OTLP span ingestion
-func NewHandler() http.Handler {
+func NewHandler(sink func([]collector.SpanWithProject)) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /healthz", http.StripPrefix("/healthz", health.NewHandler()))
-	mux.Handle("POST /v1/traces", collector.Handler(func(spans []trace.Span) {
-		// Spans are fully decoded here; storage wiring lands with the
-		// storage milestone.
-		_ = spans
-	}))
+	mux.Handle("POST /v1/traces", collector.Handler(sink))
 	return mux
 }

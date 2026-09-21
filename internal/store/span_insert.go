@@ -56,16 +56,39 @@ func (c *projectCache) put(name string, id int64) {
 //     propagates its own totals to all ancestors when it lands after
 //     them (recursive CTE).
 func (s *Store) InsertSpan(ctx context.Context, span trace.Span, projectName string) error {
-	cols, err := spanToColumns(span)
-	if err != nil {
-		return fmt.Errorf("serialize span %s: %w", span.SpanID, err)
-	}
-
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback() // no-op after Commit
+
+	if err := s.insertSpanTx(ctx, tx, span, projectName); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// insertSpanTx persists one span inside an open transaction. It is
+// shared by the single-span and batch paths so both get identical
+// semantics.
+//
+// Semantics:
+//
+//   - The trace's time range expands to cover the span (out-of-order
+//     arrivals widen the range).
+//   - Duplicate span_ids are silently ignored: OTLP exporters retry,
+//     so idempotency is required, and ON CONFLICT DO NOTHING provides
+//     it in one statement.
+//   - Cumulative counters (error count, LLM tokens) stay consistent
+//     regardless of arrival order: a span absorbs its existing direct
+//     children's cumulative totals when it lands after them, and
+//     propagates its absorbed cumulative totals to all ancestors when
+//     it lands after them (recursive CTE).
+func (s *Store) insertSpanTx(ctx context.Context, tx *sql.Tx, span trace.Span, projectName string) error {
+	cols, err := spanToColumns(span)
+	if err != nil {
+		return fmt.Errorf("serialize span %s: %w", span.SpanID, err)
+	}
 
 	projectRowID, err := s.ensureProject(ctx, tx, projectName)
 	if err != nil {
@@ -114,8 +137,9 @@ func (s *Store) InsertSpan(ctx context.Context, span trace.Span, projectName str
 		return fmt.Errorf("insert span: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		// Duplicate span: everything above was a no-op for state.
-		return tx.Commit()
+		// Duplicate span: everything above was a no-op for state; the
+		// caller commits the transaction.
+		return nil
 	}
 
 	// Propagate the absorbed cumulative totals to ancestors that
@@ -126,7 +150,7 @@ func (s *Store) InsertSpan(ctx context.Context, span trace.Span, projectName str
 	if err := propagateToAncestors(ctx, tx, traceRowID, span.ParentID, cumErr, cumTokP, cumTokC); err != nil {
 		return fmt.Errorf("propagate to ancestors: %w", err)
 	}
-	return tx.Commit()
+	return nil
 }
 
 // upsertTrace finds the trace by trace_id, expanding its time range,
