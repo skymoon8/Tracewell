@@ -1,4 +1,3 @@
-// Package collector implements OTLP span ingestion.
 package collector
 
 import (
@@ -18,6 +17,21 @@ import (
 // use to declare what kind of work a span represents.
 const spanKindAttr = "openinference.span.kind"
 
+// projectAttr is the resource attribute key naming the destination
+// project for a batch of spans.
+const projectAttr = "openinference.project.name"
+
+// defaultProject receives spans whose resource carries no project name.
+const defaultProject = "default"
+
+// SpanWithProject pairs a decoded span with the project its resource
+// declared. Spans from different resources in one export may target
+// different projects.
+type SpanWithProject struct {
+	Project string
+	Span    trace.Span
+}
+
 // DecodeSpans converts the spans of an OTLP export request into
 // Tracewell's internal model. Malformed attribute values are skipped
 // rather than rejected: observability data must never be dropped
@@ -25,17 +39,35 @@ const spanKindAttr = "openinference.span.kind"
 //
 // Attributes are ingested through the standard pipeline: JSON-string
 // conventions are parsed, then flat dotted keys are expanded into
-// nested maps and arrays.
-func DecodeSpans(req *collectorpb.ExportTraceServiceRequest) []trace.Span {
-	var out []trace.Span
+// nested maps and arrays. Each span is tagged with the project name
+// declared by its resource, falling back to the default project.
+func DecodeSpans(req *collectorpb.ExportTraceServiceRequest) []SpanWithProject {
+	var out []SpanWithProject
 	for _, rs := range req.GetResourceSpans() {
+		project := projectName(rs.GetResource().GetAttributes())
 		for _, ss := range rs.GetScopeSpans() {
 			for _, s := range ss.GetSpans() {
-				out = append(out, decodeSpan(s))
+				out = append(out, SpanWithProject{
+					Project: project,
+					Span:    decodeSpan(s),
+				})
 			}
 		}
 	}
 	return out
+}
+
+// projectName extracts the project name from resource attributes,
+// defaulting when the attribute is absent or empty.
+func projectName(kvs []*commonpb.KeyValue) string {
+	for _, kv := range kvs {
+		if kv.GetKey() == projectAttr {
+			if s := kv.GetValue().GetStringValue(); s != "" {
+				return s
+			}
+		}
+	}
+	return defaultProject
 }
 
 func decodeSpan(s *tracepb.Span) trace.Span {
