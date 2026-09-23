@@ -1,8 +1,10 @@
 package server
 
 import (
+	"database/sql"
 	"net/http"
 
+	"github.com/skymoon8/tracewell/internal/api"
 	"github.com/skymoon8/tracewell/internal/collector"
 	"github.com/skymoon8/tracewell/internal/server/health"
 )
@@ -12,9 +14,13 @@ import (
 //
 //	GET   /healthz      liveness probe
 //	POST  /v1/traces    OTLP span ingestion
-func NewHandler(sink func([]collector.SpanWithProject)) http.Handler {
+//	GET   /v1/...       REST query API (projects, traces)
+func NewHandler(sink func([]collector.SpanWithProject), db *sql.DB) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /healthz", http.StripPrefix("/healthz", health.NewHandler()))
 	mux.Handle("POST /v1/traces", collector.Handler(sink))
+	if db != nil {
+		mux.Handle("GET /v1/", api.Handler(db))
+	}
 	return mux
 }

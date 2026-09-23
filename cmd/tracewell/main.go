@@ -52,7 +52,7 @@ func run() error {
 			Addr:              *httpAddr,
 			ReadHeaderTimeout: 10 * time.Second,
 		},
-		server.NewHandler(batcher.AddAll),
+		server.NewHandler(batcher.AddAll, db),
 	)
 
 	// Block until SIGINT/SIGTERM, then drain in-flight requests.
