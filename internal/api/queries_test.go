@@ -192,6 +192,87 @@ func TestListTracesPagination(t *testing.T) {
 	}
 }
 
+func TestListSpansFilters(t *testing.T) {
+	s, h := newAPIStore(t)
+	seedTwoTraces(t, s)
+
+	// All spans: a-root, a-llm, b-root -> 3 rows, newest id first.
+	code, body := getJSON(t, h, "/v1/projects/proj-a/spans")
+	if code != 200 {
+		t.Fatalf("code = %d", code)
+	}
+	data := body["data"].([]any)
+	if len(data) != 3 {
+		t.Fatalf("spans = %d, want 3", len(data))
+	}
+
+	// Root spans only.
+	code, body = getJSON(t, h, "/v1/projects/proj-a/spans?parent_id=null")
+	data = body["data"].([]any)
+	if code != 200 || len(data) != 2 {
+		t.Fatalf("root spans = %d, want 2 (code %d)", len(data), code)
+	}
+
+	// Filter by kind.
+	code, body = getJSON(t, h, "/v1/projects/proj-a/spans?span_kind=LLM")
+	data = body["data"].([]any)
+	if code != 200 || len(data) != 2 {
+		t.Fatalf("LLM spans = %d, want 2", len(data))
+	}
+
+	// Filter by trace id and span id together.
+	code, body = getJSON(t, h, "/v1/projects/proj-a/spans?trace_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&span_id=a-llm")
+	data = body["data"].([]any)
+	if code != 200 || len(data) != 1 {
+		t.Fatalf("filtered spans = %d, want 1", len(data))
+	}
+	row := data[0].(map[string]any)
+	if row["span_kind"] != "LLM" || row["trace_id"] != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Errorf("span row = %v", row)
+	}
+	// Self token columns present on the LLM span.
+	if row["llm_token_count_prompt"].(float64) != 10 {
+		t.Errorf("self prompt tokens = %v", row["llm_token_count_prompt"])
+	}
+
+	// Unknown project -> 404.
+	code, _ = getJSON(t, h, "/v1/projects/nope/spans")
+	if code != 404 {
+		t.Errorf("unknown project code = %d, want 404", code)
+	}
+}
+
+func TestListTraceSpans(t *testing.T) {
+	s, h := newAPIStore(t)
+	seedTwoTraces(t, s)
+
+	code, body := getJSON(t, h, "/v1/projects/proj-a/traces/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/spans")
+	if code != 200 {
+		t.Fatalf("code = %d", code)
+	}
+	data := body["data"].([]any)
+	if len(data) != 2 {
+		t.Fatalf("trace spans = %d, want 2", len(data))
+	}
+
+	// Ordered by start time: the root span (t0) precedes the LLM child
+	// (also t0; tie broken by rowid, root inserted first).
+	first := data[0].(map[string]any)
+	if first["span_id"] != "a-root" {
+		t.Errorf("first span = %v, want a-root", first["span_id"])
+	}
+	// Full detail path includes attributes; the store writes at least {}.
+	if _, ok := first["attributes"].(map[string]any); !ok {
+		t.Errorf("attributes missing on span row: %v", first)
+	}
+
+	// Empty trace -> 200 with no rows (Go marshals a nil slice as null).
+	code, body = getJSON(t, h, "/v1/projects/proj-a/traces/ffffffffffffffffffffffffffffffff/spans")
+	if code != 200 || body["data"] != nil {
+		t.Errorf("unknown trace: code=%d body=%v", code, body)
+	}
+}
+
 func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
