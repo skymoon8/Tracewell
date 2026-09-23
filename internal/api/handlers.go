@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 )
@@ -38,6 +39,8 @@ func Handler(db *sql.DB) http.Handler {
 	mux.Handle("GET /v1/projects", projectList(q))
 	mux.Handle("GET /v1/projects/{identifier}", projectGet(q))
 	mux.Handle("GET /v1/projects/{identifier}/traces", traceList(q))
+	mux.Handle("GET /v1/projects/{identifier}/spans", spanList(q))
+	mux.Handle("GET /v1/projects/{identifier}/traces/{trace_id}/spans", traceSpanList(q))
 	return mux
 }
 
@@ -165,5 +168,73 @@ func traceList(q *Queries) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"data": traces, "next_cursor": nextCursor})
+	}
+}
+
+// spanListParams maps repeated query parameters onto the filter's
+// slice fields.
+func spanListParams(params url.Values) SpanFilter {
+	f := SpanFilter{
+		TraceIDs:    params["trace_id"],
+		SpanIDs:     params["span_id"],
+		Names:       params["name"],
+		SpanKinds:   params["span_kind"],
+		StatusCodes: params["status_code"],
+	}
+	if raw := params.Get("parent_id"); params.Has("parent_id") {
+		f.ParentID = &raw
+	}
+	return f
+}
+
+func spanList(q *Queries) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		project, err := q.FindProject(r.Context(), r.PathValue("identifier"))
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		params := r.URL.Query()
+		limit, err := pageLimit(params.Get("limit"))
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		f := spanListParams(params)
+		f.Limit = limit
+		if raw := params.Get("cursor"); raw != "" {
+			f.Cursor, err = strconv.ParseInt(raw, 10, 64)
+			if err != nil || f.Cursor < 0 {
+				writeError(w, errBadCursor)
+				return
+			}
+		}
+
+		spans, next, err := q.ListSpans(r.Context(), project.ID, f)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		nextCursor := ""
+		if next != 0 {
+			nextCursor = strconv.FormatInt(next, 10)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": spans, "next_cursor": nextCursor})
+	}
+}
+
+func traceSpanList(q *Queries) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		project, err := q.FindProject(r.Context(), r.PathValue("identifier"))
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		spans, err := q.ListTraceSpans(r.Context(), project.ID, r.PathValue("trace_id"))
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": spans})
 	}
 }
