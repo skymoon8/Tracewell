@@ -15,6 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/skymoon8/tracewell/internal/collector"
+	"github.com/skymoon8/tracewell/internal/metrics"
 	"github.com/skymoon8/tracewell/internal/server"
 	"github.com/skymoon8/tracewell/internal/store"
 )
@@ -45,14 +46,19 @@ func run() error {
 		return err
 	}
 
-	batcher := collector.NewBatcher(st)
+	registry := metrics.NewRegistry()
+	ing := metrics.NewIngestion(registry)
+	batcher := collector.NewBatcher(st, ing)
 
 	srv := server.New(
 		server.Config{
 			Addr:              *httpAddr,
 			ReadHeaderTimeout: 10 * time.Second,
 		},
-		server.NewHandler(batcher.AddAll, db),
+		server.NewHandler(batcher.AddAll, db, server.ServerMetrics{
+			Registry:  registry,
+			Ingestion: ing,
+		}),
 	)
 
 	// Block until SIGINT/SIGTERM, then drain in-flight requests.

@@ -184,7 +184,7 @@ func TestHandler(t *testing.T) {
 		}
 		var got []collector.SpanWithProject
 		rr := httptest.NewRecorder()
-		collector.Handler(func(s []collector.SpanWithProject) { got = s }).ServeHTTP(rr, newReq(t, body))
+		collector.Handler(func(s []collector.SpanWithProject) { got = s }, nil).ServeHTTP(rr, newReq(t, body))
 
 		if rr.Code != http.StatusOK {
 			t.Fatalf("code = %d, body %q", rr.Code, rr.Body.String())
@@ -213,7 +213,7 @@ func TestHandler(t *testing.T) {
 		rr := httptest.NewRecorder()
 		req := newReq(t, buf.Bytes())
 		req.Header.Set("Content-Encoding", "gzip")
-		collector.Handler(func(s []collector.SpanWithProject) { got = s }).ServeHTTP(rr, req)
+		collector.Handler(func(s []collector.SpanWithProject) { got = s }, nil).ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusOK || len(got) != 1 {
 			t.Fatalf("code = %d, spans = %d, body %q", rr.Code, len(got), rr.Body.String())
@@ -224,7 +224,7 @@ func TestHandler(t *testing.T) {
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/v1/traces", bytes.NewReader(nil))
 		req.Header.Set("Content-Type", "application/json")
-		collector.Handler(nil).ServeHTTP(rr, req)
+		collector.Handler(nil, nil).ServeHTTP(rr, req)
 		if rr.Code != http.StatusUnsupportedMediaType {
 			t.Errorf("code = %d, want 415", rr.Code)
 		}
@@ -232,7 +232,7 @@ func TestHandler(t *testing.T) {
 
 	t.Run("invalid protobuf is 422", func(t *testing.T) {
 		rr := httptest.NewRecorder()
-		collector.Handler(nil).ServeHTTP(rr, newReq(t, []byte("not a protobuf")))
+		collector.Handler(nil, nil).ServeHTTP(rr, newReq(t, []byte("not a protobuf")))
 		if rr.Code != http.StatusUnprocessableEntity {
 			t.Errorf("code = %d, want 422", rr.Code)
 		}
@@ -243,7 +243,7 @@ func TestHandler(t *testing.T) {
 		rr := httptest.NewRecorder()
 		req := newReq(t, body)
 		req.Header.Set("Content-Encoding", "br")
-		collector.Handler(nil).ServeHTTP(rr, req)
+		collector.Handler(nil, nil).ServeHTTP(rr, req)
 		if rr.Code != http.StatusUnsupportedMediaType {
 			t.Errorf("code = %d, want 415", rr.Code)
 		}
@@ -251,7 +251,7 @@ func TestHandler(t *testing.T) {
 
 	t.Run("get method is 405", func(t *testing.T) {
 		rr := httptest.NewRecorder()
-		collector.Handler(nil).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/traces", nil))
+		collector.Handler(nil, nil).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/traces", nil))
 		if rr.Code != http.StatusMethodNotAllowed {
 			t.Errorf("code = %d, want 405", rr.Code)
 		}
