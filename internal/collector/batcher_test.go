@@ -44,7 +44,7 @@ func batchSpan(id, parent string, kind trace.SpanKind) trace.Span {
 
 func TestBatcherPersistsSpans(t *testing.T) {
 	s := newBatcherStore(t)
-	b := collector.NewBatcher(s)
+	b := collector.NewBatcher(s, nil)
 
 	b.AddAll([]collector.SpanWithProject{
 		{Project: "proj", Span: batchSpan("root", "", trace.KindChain)},
@@ -66,7 +66,7 @@ func TestBatcherPersistsSpans(t *testing.T) {
 
 func TestBatcherFlushesOnTimer(t *testing.T) {
 	s := newBatcherStore(t)
-	b := collector.NewBatcher(s)
+	b := collector.NewBatcher(s, nil)
 
 	// Fewer than flushSize spans: only the timer guarantees they land.
 	b.AddAll([]collector.SpanWithProject{
@@ -89,7 +89,7 @@ func TestBatcherFlushesOnTimer(t *testing.T) {
 
 func TestBatcherCloseDrains(t *testing.T) {
 	s := newBatcherStore(t)
-	b := collector.NewBatcher(s)
+	b := collector.NewBatcher(s, nil)
 
 	// Queue more than flushSize so some spans are still buffered when
 	// Close is called; none may be lost.
@@ -113,7 +113,7 @@ func TestBatcherCloseDrains(t *testing.T) {
 
 func TestBatcherIsolatesFailures(t *testing.T) {
 	s := newBatcherStore(t)
-	b := collector.NewBatcher(s)
+	b := collector.NewBatcher(s, nil)
 
 	good := batchSpan("good", "", trace.KindChain)
 	// A channel value cannot be JSON-marshaled, so serializing this

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/skymoon8/tracewell/internal/metrics"
 	"github.com/skymoon8/tracewell/internal/store"
 )
 
@@ -33,19 +34,22 @@ const (
 // remains buffered before returning, so graceful shutdown loses
 // nothing that was acknowledged to clients.
 type Batcher struct {
-	ch     chan SpanWithProject
-	store  *store.Store
-	done   chan struct{} // closed when the writer loop has fully exited
-	closed sync.Once
+	ch      chan SpanWithProject
+	store   *store.Store
+	metrics *metrics.Ingestion
+	done    chan struct{} // closed when the writer loop has fully exited
+	closed  sync.Once
 }
 
 // NewBatcher starts the background writer loop. Call Close to drain
-// and stop it.
-func NewBatcher(s *store.Store) *Batcher {
+// and stop it. Metrics may be nil, which disables instrumentation
+// (used by tests that only exercise buffering).
+func NewBatcher(s *store.Store, m *metrics.Ingestion) *Batcher {
 	b := &Batcher{
-		ch:    make(chan SpanWithProject, bufferCapacity),
-		store: s,
-		done:  make(chan struct{}),
+		ch:      make(chan SpanWithProject, bufferCapacity),
+		store:   s,
+		metrics: m,
+		done:    make(chan struct{}),
 	}
 	go b.loop()
 	return b
@@ -59,6 +63,11 @@ func NewBatcher(s *store.Store) *Batcher {
 func (b *Batcher) AddAll(spans []SpanWithProject) {
 	for _, p := range spans {
 		b.ch <- p
+	}
+	// Queue depth refreshes after the whole batch lands: len(ch) reads
+	// are cheap and the consumer loop also refreshes on each pass.
+	if b.metrics != nil {
+		b.metrics.QueueSize.Set(int64(len(b.ch)))
 	}
 }
 
@@ -117,6 +126,12 @@ func (b *Batcher) flush(batch []SpanWithProject) {
 				"err", err,
 			)
 		}
+	}
+	if b.metrics != nil {
+		b.metrics.FlushDuration.Observe(time.Since(started).Seconds())
+		b.metrics.SpansFlushed.Add(int64(len(batch) - failed))
+		b.metrics.SpanErrors.Add(int64(failed))
+		b.metrics.QueueSize.Set(int64(len(b.ch)))
 	}
 	slog.Info("flushed spans", "count", len(batch), "failed", failed, "took", time.Since(started))
 }
